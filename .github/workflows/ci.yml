@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_call:
+
+jobs:
+  checks:
+    # Branch protection on main requires this exact job name.
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t boardgame-utopia:ci .
+      - name: Smoke test /health
+        run: |
+          docker run -d --name app -e PORT=8080 -p 8080:8080 boardgame-utopia:ci
+          for i in $(seq 1 20); do
+            curl -fsS http://localhost:8080/health && exit 0
+            sleep 1
+          done
+          docker logs app
+          exit 1

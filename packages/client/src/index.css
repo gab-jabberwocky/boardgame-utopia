@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Tailwind only scans the client by default; games and kit live in other packages. */
+@source "../../kit/src";
+@source "../../games";
+
+html,
+body,
+#root {
+  min-height: 100dvh;
+  background: #020617;
+}

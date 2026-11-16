@@ -1,0 +1,38 @@
+{
+  "name": "boardgame-utopia",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/shared",
+    "packages/kit",
+    "packages/server",
+    "packages/client",
+    "packages/games/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w @utopia/server\" \"npm run dev -w @utopia/client\"",
+    "build": "npm run build -w @utopia/client && npm run build -w @utopia/server",
+    "start": "node packages/server/dist/index.js",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "concurrently": "^10.0.7",
+    "eslint": "^10.15.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}
