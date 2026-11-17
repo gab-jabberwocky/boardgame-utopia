@@ -100,13 +100,21 @@ export function GameScreen({
         />
       </div>
       <ActionBar
-        legalMoves={snapshot.legalMoves}
+        // Button labels can give away a result that is still held back (e.g. a card being
+        // flipped), so bar moves wait for the reveal. Board-only games are unaffected.
+        legalMoves={
+          revealing ? snapshot.legalMoves.filter((m) => m.where === "board") : snapshot.legalMoves
+        }
         proposed={proposed}
         onPropose={(move) => setProposal({ version, move })}
         onCancel={() => setProposal(null)}
         onSubmit={submit}
         disabled={revealing}
-        idleText={idleText ?? (snapshot.result ? "Game over" : undefined)}
+        idleText={
+          revealing
+            ? latest?.pendingText
+            : (idleText ?? (snapshot.result ? "Game over" : undefined))
+        }
       />
       {!revealing && latest?.flash && version > mountedAt && (
         <EventFlash key={`flash-${version}`} text={latest.flash} tone={latest.tone} />

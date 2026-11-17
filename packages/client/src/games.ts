@@ -2,6 +2,8 @@ import type { ComponentType } from "react";
 import type { AnyGameModule, BoardProps, GameModule, PlayerId } from "@utopia/shared";
 import ridgeline from "@utopia/game-ridgeline";
 import RidgelineBoard, { playerDecor as ridgelineDecor } from "@utopia/game-ridgeline/Board";
+import overboard from "@utopia/game-overboard";
+import OverboardBoard, { playerDecor as overboardDecor } from "@utopia/game-overboard/Board";
 
 export interface PlayerDecor {
   /** Short score or note per player, shown in the player list. */
@@ -28,6 +30,9 @@ function defineGame<S, M, C, V>(
 }
 
 /** Every playable game. Add new games here. */
-export const GAMES: GameEntry[] = [defineGame(ridgeline, RidgelineBoard, ridgelineDecor)];
+export const GAMES: GameEntry[] = [
+  defineGame(ridgeline, RidgelineBoard, ridgelineDecor),
+  defineGame(overboard, OverboardBoard, overboardDecor),
+];
 
 export const findGame = (id: string) => GAMES.find((g) => g.module.id === id);

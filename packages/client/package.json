@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@utopia/game-overboard": "^0.0.0",
     "@utopia/game-ridgeline": "^0.0.0",
     "@utopia/kit": "^0.0.0",
     "@utopia/shared": "*",
