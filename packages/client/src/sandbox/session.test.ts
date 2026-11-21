@@ -1,4 +1,4 @@
-import ridgeline from "@utopia/game-ridgeline";
+import peak from "@utopia/game-peak";
 import type { AnyGameModule } from "@utopia/shared";
 import { describe, expect, it } from "vitest";
 import type { GameEntry } from "../games";
@@ -11,7 +11,7 @@ import {
   truncate,
 } from "./session";
 
-const game = { module: ridgeline as unknown as AnyGameModule, Board: () => null } as GameEntry;
+const game = { module: peak as unknown as AnyGameModule, Board: () => null } as GameEntry;
 const players = [
   { id: "p1", name: "Ann", color: "#f97316" },
   { id: "p2", name: "Bob", color: "#38bdf8" },

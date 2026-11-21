@@ -1,0 +1,21 @@
+{
+  "name": "@utopia/game-matchstick-glutton",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./Board": "./Board.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@utopia/kit": "*",
+    "@utopia/shared": "*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0"
+  }
+}

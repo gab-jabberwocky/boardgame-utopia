@@ -10,12 +10,24 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@utopia/game-overboard": "^0.0.0",
-    "@utopia/game-ridgeline": "^0.0.0",
+    "@utopia/catalog": "*",
+    "@utopia/game-barista-panic": "^0.0.0",
+    "@utopia/game-beachcomber": "^0.0.0",
+    "@utopia/game-dinner-dash": "^0.0.0",
+    "@utopia/game-glass": "^0.0.0",
+    "@utopia/game-jewels": "^0.0.0",
+    "@utopia/game-jewels-duel": "^0.0.0",
+    "@utopia/game-matchstick-glutton": "^0.0.0",
+    "@utopia/game-peak": "^0.0.0",
+    "@utopia/game-spy": "^0.0.0",
+    "@utopia/game-triplets": "^0.0.0",
+    "@utopia/game-ultra7": "^0.0.0",
     "@utopia/kit": "^0.0.0",
     "@utopia/shared": "*",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "socket.io-client": "^4.8.4",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
