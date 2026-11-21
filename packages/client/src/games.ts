@@ -4,6 +4,8 @@ import ridgeline from "@utopia/game-ridgeline";
 import RidgelineBoard, { playerDecor as ridgelineDecor } from "@utopia/game-ridgeline/Board";
 import overboard from "@utopia/game-overboard";
 import OverboardBoard, { playerDecor as overboardDecor } from "@utopia/game-overboard/Board";
+import bombBusters from "@utopia/game-bomb-busters";
+import BombBustersBoard, { playerDecor as bombBustersDecor } from "@utopia/game-bomb-busters/Board";
 
 export interface PlayerDecor {
   /** Short score or note per player, shown in the player list. */
@@ -33,6 +35,7 @@ function defineGame<S, M, C, V>(
 export const GAMES: GameEntry[] = [
   defineGame(ridgeline, RidgelineBoard, ridgelineDecor),
   defineGame(overboard, OverboardBoard, overboardDecor),
+  defineGame(bombBusters, BombBustersBoard, bombBustersDecor),
 ];
 
 export const findGame = (id: string) => GAMES.find((g) => g.module.id === id);
