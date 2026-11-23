@@ -17,4 +17,6 @@ COPY --from=build /app /app
 USER node
 # Hosts set PORT themselves; the server must listen on process.env.PORT
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+  CMD wget -qO- "http://127.0.0.1:${PORT:-3000}/health" >/dev/null || exit 1
 CMD ["node", "packages/server/dist/index.js"]

@@ -1,0 +1,27 @@
+{
+  "name": "@utopia/catalog",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@utopia/game-barista-panic": "^0.0.0",
+    "@utopia/game-beachcomber": "^0.0.0",
+    "@utopia/game-bomb-busters-v2": "^0.0.0",
+    "@utopia/game-dinner-dash": "^0.0.0",
+    "@utopia/game-glass": "^0.0.0",
+    "@utopia/game-jewels": "^0.0.0",
+    "@utopia/game-jewels-duel": "^0.0.0",
+    "@utopia/game-matchstick-glutton": "^0.0.0",
+    "@utopia/game-peak": "^0.0.0",
+    "@utopia/game-spy": "^0.0.0",
+    "@utopia/game-triplets": "^0.0.0",
+    "@utopia/game-ultra7": "^0.0.0",
+    "@utopia/shared": "*"
+  }
+}

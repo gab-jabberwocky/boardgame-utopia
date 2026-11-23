@@ -1,16 +1,14 @@
+import { normalizeRoomCode } from "@utopia/shared";
+import { CreateRoom } from "./pages/CreateRoom";
+import { Home } from "./pages/Home";
+import { RoomPage } from "./pages/RoomPage";
+import { usePath } from "./router";
+
+/** Pages: home, new room, and a room (lobby or game) at /r/CODE. */
 export function App() {
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-6 bg-slate-900 p-6 text-white">
-      <h1 className="text-3xl font-bold">Boardgame Utopia</h1>
-      <p className="text-center text-slate-300">Online lobby is coming soon.</p>
-      {import.meta.env.DEV && (
-        <a
-          href="/sandbox"
-          className="rounded-xl bg-amber-400 px-6 py-3 font-semibold text-slate-900"
-        >
-          Open the sandbox
-        </a>
-      )}
-    </main>
-  );
+  const path = usePath();
+  if (path === "/new") return <CreateRoom />;
+  const room = /^\/r\/([A-Za-z]{4})\/?$/.exec(path);
+  if (room) return <RoomPage key={room[1]} code={normalizeRoomCode(room[1]!)} />;
+  return <Home />;
 }

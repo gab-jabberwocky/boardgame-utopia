@@ -8,7 +8,9 @@ import {
   TurnBanner,
 } from "@utopia/kit/ui";
 import type { LegalMove, PlayerInfo, Snapshot, Viewer } from "@utopia/shared";
+import { DocScreen } from "./DocScreen";
 import type { GameEntry } from "./games";
+import { useSecretMode } from "./secret";
 
 export interface GameScreenProps {
   game: GameEntry;
@@ -32,7 +34,13 @@ export interface GameScreenProps {
  * the game over overlay. Results of moves with `revealAfterMs` (dice rolls) are
  * held back until the animation finishes.
  */
-export function GameScreen({
+/** In secret mode the game is shown as a plain text document instead. */
+export function GameScreen(props: GameScreenProps) {
+  const [secret] = useSecretMode();
+  return secret ? <DocScreen {...props} /> : <VisualScreen {...props} />;
+}
+
+function VisualScreen({
   game,
   snapshot,
   players,

@@ -4,9 +4,17 @@
 @source "../../kit/src";
 @source "../../games";
 
+/* Secret mode (see secret.ts): games can add hints with `secret:` classes. */
+@custom-variant secret (&:where(.secret, .secret *));
+
 html,
 body,
 #root {
   min-height: 100dvh;
   background: #020617;
+}
+
+/* Secret mode: everything grey and a little dimmer, so it doesn't catch the eye. */
+html.secret {
+  filter: grayscale(1) brightness(0.9) contrast(0.95);
 }

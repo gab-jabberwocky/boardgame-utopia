@@ -8,6 +8,7 @@
   "workspaces": [
     "packages/shared",
     "packages/kit",
+    "packages/catalog",
     "packages/server",
     "packages/client",
     "packages/games/*"
