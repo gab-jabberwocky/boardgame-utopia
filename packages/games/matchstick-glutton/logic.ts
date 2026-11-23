@@ -7,6 +7,7 @@ import {
   eliminate,
   nextTurn,
   type TurnOrder,
+  isMove,
 } from "@utopia/kit";
 import type {
   ActionDescription,
@@ -304,6 +305,7 @@ export function getLegalMoves(state: State, player: PlayerId): LegalMove<Move>[]
 }
 
 export function validateMove(state: State, player: PlayerId, move: Move): string | null {
+  if (!isMove(move)) return "That move isn't allowed.";
   if (state.phase === "over") return "The game is over.";
   if (currentPlayer(state.turn) !== player) return "It's not your turn.";
   const hand = state.hands[player] ?? [];

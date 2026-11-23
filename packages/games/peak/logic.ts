@@ -5,6 +5,7 @@ import {
   nextTurn,
   rollDice,
   type TurnOrder,
+  isMove,
 } from "@utopia/kit";
 import type {
   ActionDescription,
@@ -29,6 +30,7 @@ import type { Config } from "./config.js";
  * - If a roll gives no trail you can climb, you fall: this turn's climbing is lost.
  * - A camp on the top step claims that trail's peak; other players' camps there are removed.
  * - First to claim `peaksToWin` peaks wins.
+ * - If every peak is claimed before anyone gets there, most peaks wins (ties share the win).
  */
 
 export const TRAILS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
@@ -254,10 +256,13 @@ export function getLegalMoves(state: State, player: PlayerId): LegalMove<Move>[]
 }
 
 function normalize(move: Move): Move {
-  return move.type === "climb" ? { ...move, trails: [...move.trails].sort((a, b) => a - b) } : move;
+  return move.type === "climb" && Array.isArray(move.trails)
+    ? { ...move, trails: [...move.trails].sort((a, b) => a - b) }
+    : move;
 }
 
 export function validateMove(state: State, player: PlayerId, move: Move): string | null {
+  if (!isMove(move)) return "That move isn't allowed.";
   if (state.phase === "over") return "The game is over.";
   if (player !== activePlayer(state)) return "It's not your turn.";
   const key = JSON.stringify(normalize(move));
@@ -301,6 +306,10 @@ export function applyMove(state: State, player: PlayerId, move: Move, ctx: MoveC
       if (peaksClaimed(next, player) >= state.config.peaksToWin) {
         return { ...next, climbers: emptyTrails(), phase: "over", winner: player };
       }
+      // With every trail closed, every roll would be a fall: end the game here.
+      if (TRAILS.every((t) => peaks[t] !== null)) {
+        return { ...next, climbers: emptyTrails(), phase: "over", winner: null };
+      }
       return endTurn(next);
     }
   }
@@ -315,21 +324,39 @@ export function getPlayerView(state: State, _viewer: Viewer): State {
 const nameOf = (state: State, id: PlayerId) =>
   state.players.find((p) => p.id === id)?.name ?? "Someone";
 
+const joinNames = (names: string[]) =>
+  names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
+
 export function getResult(state: State): GameResult | null {
-  if (!state.winner) return null;
+  if (state.phase !== "over") return null;
   const ranking = state.players
     .map((p) => ({ player: p.id, score: peaksClaimed(state, p.id) }))
     .sort((a, b) => b.score - a.score);
+  if (state.winner) {
+    return {
+      winners: [state.winner],
+      ranking,
+      text: `${nameOf(state, state.winner)} wins with ${peaksClaimed(state, state.winner)} peaks!`,
+    };
+  }
+  // Every peak was claimed before anyone reached the target.
+  const best = ranking[0]?.score ?? 0;
+  const winners = ranking.filter((r) => r.score === best).map((r) => r.player);
+  const names = joinNames(winners.map((id) => nameOf(state, id)));
   return {
-    winners: [state.winner],
+    winners,
     ranking,
-    text: `${nameOf(state, state.winner)} wins with ${peaksClaimed(state, state.winner)} peaks!`,
+    text:
+      winners.length === 1
+        ? `Every peak is claimed. ${names} wins with ${best} peaks!`
+        : `Every peak is claimed. ${names} share the win with ${best} peaks!`,
   };
 }
 
 export function getStatus(state: State, viewer: Viewer): GameStatus {
-  if (state.phase === "over" && state.winner) {
-    return { text: `${nameOf(state, state.winner)} wins!`, activePlayers: [] };
+  if (state.phase === "over") {
+    const text = state.winner ? `${nameOf(state, state.winner)} wins!` : getResult(state)!.text;
+    return { text, activePlayers: [] };
   }
   const active = activePlayer(state);
   const you = viewer === active;

@@ -14,6 +14,7 @@ import {
   type PlayerInfo,
   type RoomView,
 } from "@utopia/shared";
+import { log } from "./log.js";
 
 /*
  * Rooms live in memory only (a redeploy ends them). A room has seats, a host, the
@@ -51,6 +52,8 @@ export interface Room {
   /** Open connections per token. */
   connections: Map<string, number>;
   lastActive: number;
+  /** When the host's last connection closed; null while they're connected. */
+  hostAwaySince: number | null;
 }
 
 export interface RoomManagerOptions {
@@ -60,7 +63,19 @@ export interface RoomManagerOptions {
   now?: () => number;
   /** Rooms with nobody connected are removed after this long. */
   idleMs?: number;
+  /** Rooms nobody ever sat down in are removed sooner. */
+  emptyIdleMs?: number;
+  /** Once the host has been gone this long, a connected player becomes host. */
+  hostGraceMs?: number;
+  maxRooms?: number;
+  maxRoomsPerHost?: number;
+  /** Called when game code throws. The action is refused and the room carries on. */
+  onError?: (err: unknown, context: Record<string, unknown>) => void;
 }
+
+/** Larger moves are refused unread. Real moves are a few dozen bytes. */
+export const MAX_MOVE_BYTES = 2048;
+const CODE_ATTEMPTS = 100;
 
 const fail = (error: string) => ({ ok: false as const, error });
 const ok = <T extends object>(extra: T = {} as T) => ({ ok: true as const, ...extra });
@@ -70,11 +85,32 @@ export class RoomManager {
   private random: () => number;
   private now: () => number;
   private idleMs: number;
+  private emptyIdleMs: number;
+  private hostGraceMs: number;
+  private maxRooms: number;
+  private maxRoomsPerHost: number;
+  private onError: (err: unknown, context: Record<string, unknown>) => void;
 
   constructor(private options: RoomManagerOptions) {
     this.random = options.random ?? Math.random;
     this.now = options.now ?? Date.now;
     this.idleMs = options.idleMs ?? 6 * 60 * 60 * 1000;
+    this.emptyIdleMs = options.emptyIdleMs ?? 10 * 60 * 1000;
+    this.hostGraceMs = options.hostGraceMs ?? 60 * 1000;
+    this.maxRooms = options.maxRooms ?? 500;
+    this.maxRoomsPerHost = options.maxRoomsPerHost ?? 10;
+    this.onError =
+      options.onError ?? ((err, context) => log("error", "game_error", { err, ...context }));
+  }
+
+  /** Run game code; a throw is reported and refuses the action instead of escaping. */
+  private guard<T>(context: Record<string, unknown>, run: () => T): T | undefined {
+    try {
+      return run();
+    } catch (err) {
+      this.onError(err, context);
+      return undefined;
+    }
   }
 
   has(code: string) {
@@ -104,14 +140,15 @@ export class RoomManager {
     return (parsed.data ?? {}) as Record<string, unknown>;
   }
 
-  private newCode(): string {
-    for (;;) {
+  private newCode(): string | null {
+    for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
       let code = "";
       for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
         code += ROOM_CODE_LETTERS[Math.floor(this.random() * ROOM_CODE_LETTERS.length)];
       }
       if (!this.rooms.has(code)) return code;
     }
+    return null;
   }
 
   private touch(room: Room) {
@@ -131,7 +168,14 @@ export class RoomManager {
     if (!module) return this.unknownGame(gameId);
     const parsed = this.parseConfig(module, config);
     if (!parsed) return fail("Those settings aren't valid.");
+    const full = "The server is full right now. Try again in a few minutes.";
+    if (this.rooms.size >= this.maxRooms) return fail(full);
+    const hosted = [...this.rooms.values()].filter((r) => r.hostToken === token).length;
+    if (hosted >= this.maxRoomsPerHost) {
+      return fail("You've made a lot of rooms. Use one of them, or wait a few minutes.");
+    }
     const code = this.newCode();
+    if (!code) return fail(full);
     this.rooms.set(code, {
       code,
       gameId,
@@ -142,6 +186,7 @@ export class RoomManager {
       match: null,
       connections: new Map(),
       lastActive: this.now(),
+      hostAwaySince: this.now(),
     });
     return ok({ code });
   }
@@ -150,6 +195,7 @@ export class RoomManager {
     const room = this.rooms.get(code);
     if (!room) return;
     room.connections.set(token, (room.connections.get(token) ?? 0) + 1);
+    if (token === room.hostToken) room.hostAwaySince = null;
     this.touch(room);
   }
 
@@ -159,6 +205,7 @@ export class RoomManager {
     const n = (room.connections.get(token) ?? 0) - 1;
     if (n > 0) room.connections.set(token, n);
     else room.connections.delete(token);
+    if (token === room.hostToken && n <= 0) room.hostAwaySince = this.now();
     this.touch(room);
   }
 
@@ -198,7 +245,7 @@ export class RoomManager {
       return fail("You're in the current game. Ask the host to end it first.");
     }
     room.seats = room.seats.filter((s) => s !== seat);
-    if (room.hostToken === token && room.seats[0]) room.hostToken = room.seats[0].token;
+    if (room.hostToken === token && room.seats[0]) this.setHost(room, room.seats[0].token);
     this.touch(room);
     return ok();
   }
@@ -251,7 +298,10 @@ export class RoomManager {
     const rng = createRng(`${code}:${Math.floor(this.random() * 2 ** 32)}`);
     const config = this.parseConfig(module, room.config);
     if (!config) return fail("Those settings aren't valid.");
-    const state = module.setup({ players, rng }, config);
+    const state = this.guard({ code, gameId: module.id, during: "setup" }, () =>
+      module.setup({ players, rng }, config),
+    );
+    if (state === undefined) return fail("This game couldn't start. Try other settings.");
     room.match = { module, players, state, rngState: rng.getState(), version: 0, history: [] };
     this.touch(room);
     return ok();
@@ -267,14 +317,20 @@ export class RoomManager {
     if (version !== match.version) return fail("The game moved on. Have another look.");
     const { module } = match;
     if (module.getResult(match.state)) return fail("The game is over.");
-    const error = module.validateMove(match.state, seat.info.id, move);
-    if (error) return fail(error);
+    if ((JSON.stringify(move) ?? "").length > MAX_MOVE_BYTES) return fail("That move is too big.");
+    const player = seat.info.id;
     const rng = createRng(match.rngState);
-    const after = module.applyMove(match.state, seat.info.id, move, { rng });
-    match.history = [
-      ...match.history,
-      { before: match.state, after, player: seat.info.id, move },
-    ].slice(-RECENT_ACTIONS);
+    const outcome = this.guard({ code, gameId: module.id, player, move }, () => {
+      const error = module.validateMove(match.state, player, move);
+      if (error) return fail(error);
+      return ok({ after: module.applyMove(match.state, player, move, { rng }) });
+    });
+    if (!outcome) return fail("Something went wrong with that move. Try another.");
+    if (!outcome.ok) return outcome;
+    const { after } = outcome;
+    match.history = [...match.history, { before: match.state, after, player, move }].slice(
+      -RECENT_ACTIONS,
+    );
     match.state = after;
     match.rngState = rng.getState();
     match.version += 1;
@@ -324,12 +380,38 @@ export class RoomManager {
     return firstFreeColor(room?.seats.map((s) => s.info) ?? []);
   }
 
+  private setHost(room: Room, token: string) {
+    room.hostToken = token;
+    room.hostAwaySince = room.connections.has(token) ? null : this.now();
+  }
+
+  /**
+   * Rooms whose host has been gone longer than the grace period get a new host: the
+   * first connected player in seat order. Otherwise a game could never be ended.
+   * Returns the codes of rooms that changed.
+   */
+  promoteHosts(): string[] {
+    const changed: string[] = [];
+    const cutoff = this.now() - this.hostGraceMs;
+    for (const room of this.rooms.values()) {
+      if (room.hostAwaySince === null || room.hostAwaySince > cutoff) continue;
+      const next = room.seats.find(
+        (s) => s.token !== room.hostToken && room.connections.has(s.token),
+      );
+      if (!next) continue;
+      this.setHost(room, next.token);
+      changed.push(room.code);
+    }
+    return changed;
+  }
+
   /** Remove rooms nobody has been connected to for a while. Returns how many went. */
   sweep(): number {
-    const cutoff = this.now() - this.idleMs;
+    const now = this.now();
     let removed = 0;
     for (const [code, room] of this.rooms) {
-      if (room.connections.size === 0 && room.lastActive < cutoff) {
+      const idle = room.seats.length === 0 ? this.emptyIdleMs : this.idleMs;
+      if (room.connections.size === 0 && room.lastActive < now - idle) {
         this.rooms.delete(code);
         removed += 1;
       }

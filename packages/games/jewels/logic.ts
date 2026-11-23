@@ -6,6 +6,7 @@ import {
   nextTurn,
   type Deck,
   type TurnOrder,
+  isMove,
 } from "@utopia/kit";
 import type {
   ActionDescription,
@@ -392,10 +393,12 @@ export function getLegalMoves(state: State, player: PlayerId): LegalMove<Move>[]
 }
 
 export function validateMove(state: State, player: PlayerId, move: Move): string | null {
+  if (!isMove(move)) return "That move isn't allowed.";
   if (state.phase === "over") return "The game is over.";
   if (currentPlayer(state.turn) !== player) return "It's not your turn.";
   const key = JSON.stringify(move);
   if (move.type === "take") {
+    if (!Array.isArray(move.colors)) return "Pick some colours.";
     // Colours may come in any order.
     const sorted = { ...move, colors: COLORS.filter((c) => move.colors.includes(c)) };
     if (sorted.colors.length !== move.colors.length) return "Pick different colours.";

@@ -6,6 +6,7 @@ import {
   type PlayerInfo,
   type RoomView,
 } from "@utopia/shared";
+import { ErrorBoundary } from "../ErrorBoundary";
 import { GameScreen } from "../GameScreen";
 import { SecretToggle } from "../SecretToggle";
 import { useSecretMode } from "../secret";
@@ -411,6 +412,15 @@ function RoomGame({ room }: { room: RoomView }) {
   return (
     <div className="flex h-dvh flex-col bg-slate-950 text-white">
       <header className="flex min-h-10 items-center gap-2 border-b border-slate-800 px-3 text-sm">
+        <button
+          type="button"
+          className="-ml-2 min-h-10 shrink-0 rounded-lg px-2 text-slate-400 hover:text-white"
+          aria-label="Go home. Your seat is kept; enter the code to come back."
+          title="Home (your seat is kept)"
+          onClick={() => navigate("/")}
+        >
+          ←
+        </button>
         {secret ? (
           <span className="truncate font-mono text-slate-400">
             ~/notes/{room.code.toLowerCase()}.md
@@ -455,19 +465,38 @@ function RoomGame({ room }: { room: RoomView }) {
       )}
       <div className="min-h-0 flex-1">
         <ZoomStage>
-          <GameScreen
-            game={entry}
-            snapshot={game.snapshot}
-            players={game.players}
-            viewer={viewer}
-            version={game.version}
-            onMove={async (move) => {
-              const res = await api.move(room.code, move, game.version);
-              if (!res.ok) setError({ version: game.version, text: res.error });
-            }}
-            onBackToLobby={room.youHost ? () => void api.backToLobby(room.code) : undefined}
-            idleText={playing ? undefined : over ? "Game over" : "You're watching this game"}
-          />
+          <ErrorBoundary
+            resetKey={game.version}
+            fallback={(retry) => (
+              <div role="alert" className="mx-auto flex max-w-sm flex-col gap-3 p-6 text-center">
+                <p className="font-semibold">This game screen hit a problem.</p>
+                <p className="text-sm text-slate-400">
+                  It will try again after the next move.
+                  {room.youHost ? " You can also end the game from the top bar." : ""}
+                </p>
+                <button type="button" className={button.secondary} onClick={retry}>
+                  Try again
+                </button>
+                <button type="button" className={button.quiet} onClick={() => navigate("/")}>
+                  Go home · your seat is kept, rejoin with code {room.code}
+                </button>
+              </div>
+            )}
+          >
+            <GameScreen
+              game={entry}
+              snapshot={game.snapshot}
+              players={game.players}
+              viewer={viewer}
+              version={game.version}
+              onMove={async (move) => {
+                const res = await api.move(room.code, move, game.version);
+                if (!res.ok) setError({ version: game.version, text: res.error });
+              }}
+              onBackToLobby={room.youHost ? () => void api.backToLobby(room.code) : undefined}
+              idleText={playing ? undefined : over ? "Game over" : "You're watching this game"}
+            />
+          </ErrorBoundary>
         </ZoomStage>
       </div>
     </div>

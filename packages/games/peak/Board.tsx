@@ -12,6 +12,7 @@ import {
   type DiceChoice,
   type Move,
   type State,
+  CLIMBERS_PER_TURN,
 } from "./logic.js";
 
 /** Peak counts for the shell's player list. */
@@ -364,10 +365,39 @@ export default function Board({
         <p className="text-center text-[11px] text-slate-500">
           ■ camp · ▲ this turn&apos;s climb · dashed = selected
         </p>
+        <section aria-label="Rules reference" className="w-full rounded-xl bg-slate-900/60 p-2.5">
+          <table className="w-full border-separate border-spacing-y-1 text-xs">
+            <tbody>
+              {REFERENCE.map(([name, text]) => (
+                <tr key={name}>
+                  <th
+                    scope="row"
+                    className="w-20 pr-2 text-left align-top font-semibold text-slate-200"
+                  >
+                    {name}
+                  </th>
+                  <td className="text-slate-400">{text}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
       </div>
     </div>
   );
 }
+
+const REFERENCE: [string, string][] = [
+  ["Roll", "Roll 4 dice and split them into two pairs. Each pair's sum is a trail."],
+  ["Climb", `Up to ${CLIMBERS_PER_TURN} climbers a turn, each starting just above your camp.`],
+  ["Push", "Roll again to climb further, or make camp to keep this turn's progress."],
+  ["Fall", "No pair you can climb: this turn's climbing is lost."],
+  ["Peak", "A camp on the top step claims that trail; other camps there are removed."],
+  [
+    "Win",
+    "First to claim the set number of peaks (3 by default). If every peak is claimed first, most peaks wins.",
+  ],
+];
 
 // ---------------------------------------------------------------- action panel pieces
 

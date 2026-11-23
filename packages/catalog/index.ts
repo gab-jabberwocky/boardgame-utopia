@@ -2,7 +2,7 @@ import type { AnyGameModule } from "@utopia/shared";
 import jewels from "@utopia/game-jewels";
 import glass from "@utopia/game-glass";
 import beachcomber from "@utopia/game-beachcomber";
-import bombBusters from "@utopia/game-bomb-busters";
+import bombBustersV2 from "@utopia/game-bomb-busters-v2";
 import baristaPanic from "@utopia/game-barista-panic";
 import dinnerDash from "@utopia/game-dinner-dash";
 import jewelsDuel from "@utopia/game-jewels-duel";
@@ -28,7 +28,7 @@ export const GAME_MODULES: AnyGameModule[] = [
   glass,
   beachcomber,
   baristaPanic,
-  bombBusters,
+  bombBustersV2,
 ].map((m) => m as unknown as AnyGameModule);
 
 export const findModule = (id: string) => GAME_MODULES.find((m) => m.id === id);

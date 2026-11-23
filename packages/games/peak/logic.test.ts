@@ -219,6 +219,57 @@ describe("stopping and winning", () => {
     expect(getLegalMoves(after, "ann")).toEqual([]);
   });
 
+  it("when every peak is claimed before anyone reaches the target, most peaks wins", () => {
+    const four = [
+      ...players,
+      { id: "cy", name: "Cy", color: "#a3e635" },
+      { id: "dee", name: "Dee", color: "#f472b6" },
+    ];
+    const base = setup({ players: four, rng: createRng(1) }, configSchema.parse({ peaksToWin: 5 }));
+    // Ann 4, Bob 3, Cy 2, Dee 1; Dee claims trail 12, the last one.
+    const owners = ["ann", "ann", "ann", "ann", "bob", "bob", "bob", "cy", "cy", "dee"];
+    const peaks = [...base.peaks];
+    owners.forEach((owner, i) => (peaks[i + 2] = owner));
+    const turn = { ...base.turn, current: 3 };
+    const state: State = { ...base, turn, peaks, phase: "decide", climbers: withSteps({ 12: 3 }) };
+    const after = applyMove(state, "dee", { type: "stop" }, { rng: createRng(1) });
+    expect(after.phase).toBe("over");
+    expect(getResult(after)).toMatchObject({
+      winners: ["ann"],
+      text: "Every peak is claimed. Ann wins with 4 peaks!",
+    });
+    expect(getStatus(after, "ann")).toEqual({
+      text: "Every peak is claimed. Ann wins with 4 peaks!",
+      activePlayers: [],
+    });
+    expect(getLegalMoves(after, "ann")).toEqual([]);
+  });
+
+  it("all peaks claimed with a tie for most: the leaders share the win", () => {
+    const three = [...players, { id: "cy", name: "Cy", color: "#a3e635" }];
+    const base = setup(
+      { players: three, rng: createRng(1) },
+      configSchema.parse({ peaksToWin: 5 }),
+    );
+    // Ann 4, Bob 4, Cy 2 claimed; Cy claims trail 12, the last one.
+    const owners = ["ann", "ann", "ann", "ann", "bob", "bob", "bob", "bob", "cy", "cy"];
+    const peaks = [...base.peaks];
+    owners.forEach((owner, i) => (peaks[i + 2] = owner));
+    const cyTurn = { ...base.turn, current: 2 };
+    const state: State = {
+      ...base,
+      turn: cyTurn,
+      peaks,
+      phase: "decide",
+      climbers: withSteps({ 12: 3 }),
+    };
+    const after = applyMove(state, "cy", { type: "stop" }, { rng: createRng(1) });
+    expect(getResult(after)).toMatchObject({
+      winners: ["ann", "bob"],
+      text: "Every peak is claimed. Ann and Bob share the win with 4 peaks!",
+    });
+  });
+
   it("peaksToWin raises the target", () => {
     const base = newGame({ peaksToWin: 4 });
     const peaks = [...base.peaks];
@@ -390,4 +441,20 @@ describe("whole games", () => {
     }
     expect(getResult(state)?.winners).toHaveLength(1);
   });
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])(
+    "seed %i: 4 players racing to 5 peaks never get stuck with every trail claimed",
+    (seed) => {
+      const rng = createRng(seed);
+      const four = ["a", "b", "c", "d"].map((id) => ({ id, name: id.toUpperCase(), color: id }));
+      let state = setup({ players: four, rng }, configSchema.parse({ peaksToWin: 5 }));
+      for (let i = 0; i < 50_000 && !getResult(state); i++) {
+        const player = state.players[state.turn.current]!.id;
+        const moves = getLegalMoves(state, player);
+        const stop = moves.find((m) => m.move.type === "stop");
+        const choice = stop && rng.next() < 0.5 ? stop : rng.pick(moves);
+        state = applyMove(state, player, choice.move, { rng });
+      }
+      expect(getResult(state)).not.toBeNull();
+    },
+  );
 });

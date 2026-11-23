@@ -38,8 +38,11 @@ import BaristaPanicBoard, {
   playerDecor as baristaPanicDecor,
   docView as baristaPanicDoc,
 } from "@utopia/game-barista-panic/Board";
-import bombBusters from "@utopia/game-bomb-busters";
-import BombBustersBoard, { playerDecor as bombBustersDecor } from "@utopia/game-bomb-busters/Board";
+import bombBustersV2 from "@utopia/game-bomb-busters-v2";
+import BombBustersV2Board, {
+  playerDecor as bombBustersV2Decor,
+  docView as bombBustersV2Doc,
+} from "@utopia/game-bomb-busters-v2/Board";
 import spy from "@utopia/game-spy";
 import SpyBoard, { playerDecor as spyDecor, docView as spyDoc } from "@utopia/game-spy/Board";
 import triplets from "@utopia/game-triplets";
@@ -101,7 +104,7 @@ export const GAMES: GameEntry[] = [
   defineGame(glass, GlassBoard, glassDecor, glassDoc),
   defineGame(beachcomber, BeachcomberBoard, beachcomberDecor, beachcomberDoc),
   defineGame(baristaPanic, BaristaPanicBoard, baristaPanicDecor, baristaPanicDoc),
-  defineGame(bombBusters, BombBustersBoard, bombBustersDecor),
+  defineGame(bombBustersV2, BombBustersV2Board, bombBustersV2Decor, bombBustersV2Doc),
 ];
 
 export const findGame = (id: string) => GAMES.find((g) => g.module.id === id);

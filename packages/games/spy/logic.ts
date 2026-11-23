@@ -9,6 +9,7 @@ import type {
   SetupContext,
   Viewer,
 } from "@utopia/shared";
+import { isMove } from "@utopia/kit";
 import type { Config } from "./config.js";
 
 /*
@@ -349,6 +350,7 @@ export function getLegalMoves(state: State, player: PlayerId): LegalMove<Move>[]
 }
 
 export function validateMove(state: State, player: PlayerId, move: Move): string | null {
+  if (!isMove(move)) return "That move isn't allowed.";
   if (state.phase === "over") return "The game is over.";
   if (!waitingOn(state).includes(player)) return "It's not your turn to do that.";
   if (move.type === "found") {

@@ -12,6 +12,8 @@ import {
   type ClientToServerEvents,
   type ServerToClientEvents,
 } from "@utopia/shared";
+import { log as defaultLog } from "./log.js";
+import { createRateLimiter } from "./rateLimit.js";
 import { RoomManager } from "./rooms.js";
 
 export interface AppOptions {
@@ -19,6 +21,8 @@ export interface AppOptions {
   clientDist?: string;
   /** Games on offer (defaults to every game in the catalog). */
   games?: readonly AnyGameModule[];
+  /** Where log lines go (defaults to JSON lines on stdout/stderr). */
+  log?: typeof defaultLog;
 }
 
 interface SocketData {
@@ -29,9 +33,15 @@ type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, object, Soc
 type AnyAck = (res: Ack<object>) => void;
 
 const SWEEP_MS = 10 * 60 * 1000;
+const HOST_CHECK_MS = 15 * 1000;
+/** Socket.IO's default is 1 MB; nothing we receive comes close to this. */
+const MAX_MESSAGE_BYTES = 64 * 1024;
+const SERVER_ERROR = "Something went wrong on the server. Try again.";
 
 export function createApp(options: AppOptions = {}) {
+  const log = options.log ?? defaultLog;
   const app = express();
+  app.disable("x-powered-by");
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
@@ -48,12 +58,29 @@ export function createApp(options: AppOptions = {}) {
   const httpServer: HttpServer = createServer(app);
   const io = new SocketServer<ClientToServerEvents, ServerToClientEvents, object, SocketData>(
     httpServer,
+    { maxHttpBufferSize: MAX_MESSAGE_BYTES },
   );
-  const rooms = new RoomManager({ games: options.games ?? GAME_MODULES });
+  const rooms = new RoomManager({
+    games: options.games ?? GAME_MODULES,
+    onError: (err, context) => log("error", "game_error", { err, ...context }),
+  });
 
-  const sweeper = setInterval(() => rooms.sweep(), SWEEP_MS);
+  const sweeper = setInterval(() => {
+    const removed = rooms.sweep();
+    if (removed) log("info", "rooms_swept", { removed, open: rooms.size });
+  }, SWEEP_MS);
+  const hostCheck = setInterval(() => {
+    for (const code of rooms.promoteHosts()) {
+      log("info", "host_promoted", { code });
+      broadcast(code);
+    }
+  }, HOST_CHECK_MS);
   sweeper.unref();
-  httpServer.on("close", () => clearInterval(sweeper));
+  hostCheck.unref();
+  httpServer.on("close", () => {
+    clearInterval(sweeper);
+    clearInterval(hostCheck);
+  });
 
   // Every connection carries the guest token kept in the browser.
   io.use((socket, next) => {
@@ -66,18 +93,51 @@ export function createApp(options: AppOptions = {}) {
     }
   });
 
+  /** Send one socket its own view of a room. */
+  function sendView(socket: GameSocket, code: string) {
+    try {
+      const view = rooms.view(code, socket.data.token);
+      if (view) socket.emit("room:state", view);
+    } catch (err) {
+      log("error", "view_error", { err, code });
+    }
+  }
+
   /** Send everyone following a room their own view of it. */
   function broadcast(code: string) {
     for (const id of io.sockets.adapter.rooms.get(code) ?? []) {
       const socket = io.sockets.sockets.get(id) as GameSocket | undefined;
-      const view = socket && rooms.view(code, socket.data.token);
-      if (socket && view) socket.emit("room:state", view);
+      if (socket) sendView(socket, code);
     }
   }
 
   io.on("connection", (socket: GameSocket) => {
     const { token } = socket.data;
     let watching: string | null = null;
+
+    // Refuse floods, and never let a throwing handler take the process down.
+    const allow = createRateLimiter(40, 10);
+    socket.use(([, ...args], next) => {
+      const ack = args.at(-1);
+      const reply = typeof ack === "function" ? (ack as AnyAck) : () => {};
+      if (!allow()) return reply({ ok: false, error: "Slow down a little." });
+      next();
+    });
+    const listen = <E extends keyof ClientToServerEvents>(
+      event: E,
+      handler: ClientToServerEvents[E],
+    ) => {
+      const guarded = (...args: unknown[]) => {
+        try {
+          (handler as (...args: unknown[]) => void)(...args);
+        } catch (err) {
+          log("error", "handler_error", { err, event });
+          const ack = args.at(-1);
+          if (typeof ack === "function") (ack as AnyAck)({ ok: false, error: SERVER_ERROR });
+        }
+      };
+      socket.on(event, guarded as never);
+    };
 
     const stopWatching = () => {
       if (!watching) return;
@@ -110,34 +170,38 @@ export function createApp(options: AppOptions = {}) {
     };
     const str = (v: unknown) => (typeof v === "string" ? v : "");
 
-    socket.on("room:create", (req, ack) => {
+    listen("room:create", (req, ack) => {
       const reply = typeof ack === "function" ? ack : () => {};
-      reply(rooms.create(token, str(req?.gameId), req?.config));
+      const res = rooms.create(token, str(req?.gameId), req?.config);
+      if (res.ok) log("info", "room_created", { code: res.code, gameId: str(req?.gameId) });
+      reply(res);
     });
 
-    socket.on("room:watch", (req, ack) => {
+    listen("room:watch", (req, ack) => {
       const code = codeOf(req);
       const reply = typeof ack === "function" ? ack : () => {};
       if (!code || !rooms.has(code)) return reply({ ok: false, error: "No room with that code." });
-      if (watching !== code) {
-        stopWatching();
-        watching = code;
-        void socket.join(code);
-        rooms.connect(code, token);
-      }
       reply({ ok: true });
+      if (watching === code) {
+        sendView(socket, code); // nothing changed for anyone else
+        return;
+      }
+      stopWatching();
+      watching = code;
+      void socket.join(code);
+      rooms.connect(code, token);
       broadcast(code);
     });
 
-    socket.on("room:join", (req, ack) => {
+    listen("room:join", (req, ack) => {
       handle(ack, codeOf(req), (code) => rooms.join(code, token, str(req?.name), str(req?.color)));
     });
 
-    socket.on("room:leave", (req, ack) => {
+    listen("room:leave", (req, ack) => {
       handle(ack, codeOf(req), (code) => rooms.leave(code, token));
     });
 
-    socket.on("room:kick", (req, ack) => {
+    listen("room:kick", (req, ack) => {
       handle(ack, codeOf(req), (code) => {
         const res = rooms.kick(code, token, str(req?.player));
         if (res.ok) {
@@ -153,20 +217,21 @@ export function createApp(options: AppOptions = {}) {
       });
     });
 
-    socket.on("room:setGame", (req, ack) => {
+    listen("room:setGame", (req, ack) => {
       handle(ack, codeOf(req), (code) => rooms.setGame(code, token, str(req?.gameId), req?.config));
     });
 
-    socket.on("game:start", (req, ack) => {
-      handle(ack, codeOf(req), (code) => rooms.start(code, token));
+    listen("game:start", (req, ack) => {
+      const res = handle(ack, codeOf(req), (code) => rooms.start(code, token));
+      if (res?.ok) log("info", "game_started", { code: codeOf(req) });
     });
 
-    socket.on("game:move", (req, ack) => {
+    listen("game:move", (req, ack) => {
       const version = typeof req?.version === "number" ? req.version : -1;
       handle(ack, codeOf(req), (code) => rooms.move(code, token, req?.move, version));
     });
 
-    socket.on("game:backToLobby", (req, ack) => {
+    listen("game:backToLobby", (req, ack) => {
       handle(ack, codeOf(req), (code) => rooms.backToLobby(code, token));
     });
 

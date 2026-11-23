@@ -2,6 +2,7 @@
 
 Push-your-luck dice game for 2–4 players: climb 11 trails (2–12) with pairs of dice,
 stop to make camp, or fall and lose the turn's progress. First to claim 3 peaks wins.
+If every peak is claimed before anyone gets there, most peaks wins (ties share the win).
 
 | Term    | Meaning                                                         |
 | ------- | --------------------------------------------------------------- |

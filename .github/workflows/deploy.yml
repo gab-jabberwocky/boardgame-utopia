@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -21,7 +24,7 @@ jobs:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Deploy to Render
         if: env.RENDER_DEPLOY_HOOK_URL != ''
@@ -29,7 +32,7 @@ jobs:
 
       - name: Deploy to Railway
         if: env.RENDER_DEPLOY_HOOK_URL == '' && env.RAILWAY_TOKEN != ''
-        run: npx --yes @railway/cli up --ci --service "$RAILWAY_SERVICE"
+        run: npx --yes @railway/cli@5.75.0 up --ci --service "$RAILWAY_SERVICE"
 
       - name: No deploy target configured
         if: env.RENDER_DEPLOY_HOOK_URL == '' && env.RAILWAY_TOKEN == ''

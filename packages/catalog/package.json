@@ -12,7 +12,7 @@
   "dependencies": {
     "@utopia/game-barista-panic": "^0.0.0",
     "@utopia/game-beachcomber": "^0.0.0",
-    "@utopia/game-bomb-busters": "^0.0.0",
+    "@utopia/game-bomb-busters-v2": "^0.0.0",
     "@utopia/game-dinner-dash": "^0.0.0",
     "@utopia/game-glass": "^0.0.0",
     "@utopia/game-jewels": "^0.0.0",

@@ -1,8 +1,37 @@
 import type { AddressInfo } from "node:net";
 import { io as connect, type Socket } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ClientToServerEvents, RoomView, ServerToClientEvents } from "@utopia/shared";
-import { createApp } from "./app.js";
+import { z } from "zod";
+import type {
+  AnyGameModule,
+  ClientToServerEvents,
+  RoomView,
+  ServerToClientEvents,
+} from "@utopia/shared";
+import { createApp, type AppOptions } from "./app.js";
+
+/** A one-player game whose every piece of code throws once a move is made. */
+const brokenGame = {
+  id: "broken",
+  name: "Broken",
+  description: "Throws.",
+  minPlayers: 1,
+  maxPlayers: 1,
+  configSchema: z.object({}),
+  setup: () => ({ moved: false }),
+  validateMove: (_s: unknown, _p: string, move: unknown) => {
+    if (move === "boom") throw new Error("validate bug");
+    return null;
+  },
+  applyMove: () => ({ moved: true }),
+  getPlayerView: (s: { moved: boolean }) => {
+    if (s.moved) throw new Error("view bug");
+    return s;
+  },
+  getResult: () => null,
+  getStatus: () => ({ text: "Go", activePlayers: [] }),
+  describeMove: () => ({ text: "moved" }),
+} as unknown as AnyGameModule;
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -15,8 +44,8 @@ describe("server app", () => {
     await close?.();
   });
 
-  async function start() {
-    const app = createApp();
+  async function start(options: AppOptions = {}) {
+    const app = createApp({ log: () => {}, ...options });
     await new Promise<void>((resolve) => app.httpServer.listen(0, resolve));
     close = () => new Promise((resolve) => void app.io.close(() => resolve()));
     const { port } = app.httpServer.address() as AddressInfo;
@@ -165,5 +194,37 @@ describe("server app", () => {
       error:
         'The server doesn\'t have "nope" yet. Restart it with the latest build, then try again.',
     });
+  });
+
+  it("survives game code that throws, and keeps serving everyone", async () => {
+    const { url } = await start({ games: [brokenGame] });
+    const ann = client(url, "ann-token-123");
+    const created = await ann.socket.emitWithAck("room:create", { gameId: "broken", config: {} });
+    if (!created.ok) throw new Error(created.error);
+    const { code } = created;
+    await ann.socket.emitWithAck("room:watch", { code });
+    await ann.socket.emitWithAck("room:join", { code, name: "Ann", color: "#f97316" });
+    expect(await ann.socket.emitWithAck("game:start", { code })).toEqual({ ok: true });
+
+    const bad = await ann.socket.emitWithAck("game:move", { code, move: "boom", version: 0 });
+    expect(bad).toMatchObject({ ok: false });
+    // This move works, but then building anyone's view throws.
+    expect(await ann.socket.emitWithAck("game:move", { code, move: "ok", version: 0 })).toEqual({
+      ok: true,
+    });
+    const res = await fetch(`${url}/health`);
+    expect(res.status).toBe(200);
+    expect(await ann.socket.emitWithAck("room:watch", { code })).toEqual({ ok: true });
+  });
+
+  it("slows down a client that floods the server", async () => {
+    const { url } = await start();
+    const ann = client(url, "ann-token-123");
+    const replies = await Promise.all(
+      Array.from({ length: 80 }, () => ann.socket.emitWithAck("room:watch", { code: "ZZZZ" })),
+    );
+    const slowed = replies.filter((r) => !r.ok && /slow down/i.test(r.error));
+    expect(slowed.length).toBeGreaterThan(0);
+    expect(slowed.length).toBeLessThan(80);
   });
 });

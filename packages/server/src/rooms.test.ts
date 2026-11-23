@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AnyGameModule, GameModule, PlayerId } from "@utopia/shared";
-import { RoomManager } from "./rooms.js";
+import { RoomManager, type RoomManagerOptions } from "./rooms.js";
 
 /** A tiny game: take turns adding 1; first to `target` wins. Everyone has a secret. */
 interface CountState {
@@ -42,21 +42,42 @@ const countGame: GameModule<CountState, { type: "add" }, { target: number }> = {
   getLegalMoves: () => [{ move: { type: "add" }, label: "Add 1" }],
 };
 
+/** Count, but with bugs: "boom" throws while checking, "crash" throws while applying. */
+const buggyGame: typeof countGame = {
+  ...countGame,
+  id: "buggy",
+  validateMove: (s, p, m) => {
+    if ((m as { type: string }).type === "boom") throw new Error("validate bug");
+    return countGame.validateMove(s, p, m);
+  },
+  applyMove: (s, p, m, ctx) => {
+    if ((m as { type: string }).type === "crash") throw new Error("apply bug");
+    return countGame.applyMove(s, p, m, ctx);
+  },
+  setup: (ctx, config) => {
+    if (config.target === 99) throw new Error("setup bug");
+    return countGame.setup(ctx, config);
+  },
+};
+
 let clock = 0;
-const manager = () => {
+const errors: unknown[] = [];
+const manager = (options: Partial<RoomManagerOptions> = {}) => {
   let seed = 0;
   return new RoomManager({
-    games: [countGame as unknown as AnyGameModule],
+    games: [countGame, buggyGame] as unknown as AnyGameModule[],
     random: () => (seed = (seed * 9301 + 49297) % 233280) / 233280,
     now: () => clock,
     idleMs: 1000,
+    onError: (err) => errors.push(err),
+    ...options,
   });
 };
 
 /** A room created by "host-token" with Ann (host) and Bob seated. */
-function roomWithTwo() {
-  const rooms = manager();
-  const created = rooms.create("host-token", "count", { target: 3 });
+function roomWithTwo(gameId = "count", options: Partial<RoomManagerOptions> = {}) {
+  const rooms = manager(options);
+  const created = rooms.create("host-token", gameId, { target: 3 });
   if (!created.ok) throw new Error(created.error);
   const { code } = created;
   expect(rooms.join(code, "host-token", "Ann", "#f97316")).toEqual({ ok: true });
@@ -211,5 +232,82 @@ describe("rooms", () => {
     clock += 5000;
     expect(rooms.sweep()).toBe(1);
     expect(rooms.has(code)).toBe(false);
+  });
+
+  it("a bug in a game rejects that action instead of taking the server down", () => {
+    const { rooms, code } = roomWithTwo("buggy");
+    errors.length = 0;
+    expect(rooms.setGame(code, "host-token", "buggy", { target: 99 })).toEqual({ ok: true });
+    expect(rooms.start(code, "host-token")).toMatchObject({ ok: false });
+    expect(rooms.setGame(code, "host-token", "buggy", { target: 3 })).toEqual({ ok: true });
+    expect(rooms.start(code, "host-token")).toEqual({ ok: true });
+    expect(rooms.move(code, "host-token", { type: "boom" }, 0)).toMatchObject({ ok: false });
+    expect(rooms.move(code, "host-token", { type: "crash" }, 0)).toMatchObject({ ok: false });
+    expect(errors).toHaveLength(3);
+    // Nothing changed, and the game carries on.
+    expect(rooms.view(code, "host-token")!.game!.version).toBe(0);
+    expect(rooms.move(code, "host-token", { type: "add" }, 0)).toEqual({ ok: true });
+  });
+
+  it("refuses oversized moves before the game sees them", () => {
+    const { rooms, code } = roomWithTwo();
+    rooms.start(code, "host-token");
+    const big = { type: "add", pad: "x".repeat(5000) };
+    expect(rooms.move(code, "host-token", big, 0)).toMatchObject({ ok: false });
+    expect(rooms.view(code, "host-token")!.game!.version).toBe(0);
+  });
+
+  it("caps the number of rooms, overall and per host", () => {
+    const rooms = manager({ maxRooms: 3, maxRoomsPerHost: 2 });
+    expect(rooms.create("a-token", "count", {}).ok).toBe(true);
+    expect(rooms.create("a-token", "count", {}).ok).toBe(true);
+    expect(rooms.create("a-token", "count", {})).toMatchObject({ ok: false });
+    expect(rooms.create("b-token", "count", {}).ok).toBe(true);
+    expect(rooms.create("c-token", "count", {})).toMatchObject({ ok: false });
+    expect(rooms.size).toBe(3);
+  });
+
+  it("gives up instead of looping forever when no free code turns up", () => {
+    const rooms = manager({ random: () => 0 }); // every code comes out "AAAA"
+    expect(rooms.create("a-token", "count", {}).ok).toBe(true);
+    expect(rooms.create("b-token", "count", {})).toMatchObject({ ok: false });
+  });
+
+  it("removes rooms nobody ever sat down in much sooner", () => {
+    const rooms = manager({ idleMs: 60_000, emptyIdleMs: 1000 });
+    const res = rooms.create("a-token", "count", {});
+    if (!res.ok) throw new Error(res.error);
+    clock += 5000;
+    expect(rooms.sweep()).toBe(1);
+    expect(rooms.has(res.code)).toBe(false);
+  });
+
+  it("hands the host role to a connected player once the host has been away a while", () => {
+    const { rooms, code } = roomWithTwo("count", { hostGraceMs: 1000 });
+    rooms.connect(code, "host-token");
+    rooms.connect(code, "bob-token");
+    rooms.start(code, "host-token");
+    rooms.disconnect(code, "host-token");
+    clock += 500;
+    expect(rooms.promoteHosts()).toEqual([]);
+    clock += 600;
+    expect(rooms.promoteHosts()).toEqual([code]);
+    expect(rooms.view(code, "bob-token")).toMatchObject({ youHost: true, hostId: "p2" });
+    // The new host can end the stuck game.
+    expect(rooms.backToLobby(code, "bob-token")).toEqual({ ok: true });
+  });
+
+  it("keeps the host if they come back in time, or if nobody else is around", () => {
+    const { rooms, code } = roomWithTwo("count", { hostGraceMs: 1000 });
+    rooms.connect(code, "host-token");
+    rooms.disconnect(code, "host-token");
+    clock += 500;
+    rooms.connect(code, "host-token");
+    clock += 5000;
+    expect(rooms.promoteHosts()).toEqual([]);
+    rooms.disconnect(code, "host-token"); // Bob isn't connected either
+    clock += 5000;
+    expect(rooms.promoteHosts()).toEqual([]);
+    expect(rooms.view(code, "host-token")).toMatchObject({ youHost: true });
   });
 });
